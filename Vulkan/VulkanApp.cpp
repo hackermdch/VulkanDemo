@@ -107,6 +107,8 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		createInfo.ppEnabledExtensionNames = enabledExtensions.data();
 		auto result = createInstance(&createInfo, nullptr, &instance);
 		assert(result == Result::eSuccess);
+		void LoadReferences(VkInstance);
+		LoadReferences(instance);
 	}
 #pragma endregion
 #pragma region SetupDebug
@@ -117,7 +119,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		createInfo.messageSeverity = DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | DebugUtilsMessageSeverityFlagBitsEXT::eError | DebugUtilsMessageSeverityFlagBitsEXT::eWarning;
 		createInfo.messageType = DebugUtilsMessageTypeFlagBitsEXT::eGeneral | DebugUtilsMessageTypeFlagBitsEXT::eValidation | DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
 		createInfo.pfnUserCallback = DebugCallback;
-		debugger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr, DispatchLoaderDynamic(instance, vkGetInstanceProcAddr));
+		debugger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr);
 	}
 #endif
 #pragma endregion
@@ -538,7 +540,7 @@ VulkanApp::~VulkanApp()
 	device.destroy(nullptr);
 	instance.destroySurfaceKHR(surface, nullptr);
 #ifdef _DEBUG
-	instance.destroyDebugUtilsMessengerEXT(debugger, nullptr, DispatchLoaderDynamic(instance, vkGetInstanceProcAddr));
+	instance.destroyDebugUtilsMessengerEXT(debugger, nullptr);
 #endif
 	instance.destroy();
 }
