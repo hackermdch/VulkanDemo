@@ -41,8 +41,13 @@ uint32_t VulkanApp::FindMemoryType(uint32_t typeFilter, MemoryPropertyFlags prop
 void VulkanApp::DrawFrame()
 {
 	device.waitForFences(1, &fences[currentFrame], VK_TRUE, UINT64_MAX);
-	uint32_t imageIndex;
-	auto result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+	VkSubmitInfo submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO,nullptr, 0, nullptr, nullptr, 0, nullptr,  1, };
+	SubmitInfo s{};
+	s.sType = StructureType::eSubmitInfo;
+	s.signalSemaphoreCount = 1;
+	s.pSignalSemaphores = &imageSemaphores[currentFrame];
+	queue.submit(1, &s, Fence(nullptr));
+	uint32_t imageIndex = pSwapchain->GetCurrentBackBufferIndex();
 	if (imageFences[imageIndex] != Fence(VK_NULL_HANDLE)) {
 		device.waitForFences(1, &imageFences[imageIndex], VK_TRUE, UINT64_MAX);
 	}
@@ -61,15 +66,21 @@ void VulkanApp::DrawFrame()
 	submitInfo.pSignalSemaphores = signalSemaphores;
 	device.resetFences(1, &fences[currentFrame]);
 	assert(queue.submit(1, &submitInfo, fences[currentFrame]) == Result::eSuccess);
-	PresentInfoKHR presentInfo{};
-	presentInfo.sType = StructureType::ePresentInfoKHR;
-	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = signalSemaphores;
-	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = &swapchain;
-	presentInfo.pImageIndices = &imageIndex;
-	result = queue.presentKHR(&presentInfo);
-	assert(result == Result::eSuccess);
+	assert(imageIndex == pSwapchain->GetCurrentBackBufferIndex());
+	FenceCreateInfo fci{};
+	fci.sType = StructureType::eFenceCreateInfo;
+	Fence f;
+	device.createFence(&fci, nullptr, &f);
+	PipelineStageFlags waitStage = PipelineStageFlagBits::eBottomOfPipe;
+	SubmitInfo sub{};
+	sub.sType = StructureType::eSubmitInfo;
+	sub.waitSemaphoreCount = 1;
+	sub.pWaitSemaphores = &renderSemaphores[imageIndex];
+	sub.pWaitDstStageMask = &waitStage;
+	assert(queue.submit(1, &sub, f) == Result::eSuccess);
+	assert(device.waitForFences(1, &f, VK_TRUE, UINT64_MAX) == Result::eSuccess);
+	device.destroyFence(f, nullptr);
+	pSwapchain->Present(1, 0);
 	currentFrame = (currentFrame + 1) % MaxFrame;
 }
 
@@ -99,14 +110,27 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		createInfo.pNext = nullptr;
 		createInfo.pApplicationInfo = &appInfo;
 #ifdef NDEBUG
-		std::vector<const char*> enabledExtensions{ VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME };
+		std::vector<const char*> enabledExtensions{
+			VK_KHR_SURFACE_EXTENSION_NAME,
+			VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+			VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+			VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+		};
 #else
-		std::vector<const char*> enabledExtensions{ VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_EXTENSION_NAME };
+		std::vector<const char*> enabledExtensions{
+			VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+			VK_KHR_SURFACE_EXTENSION_NAME,
+			VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+			VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+			VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME
+		};
 #endif
 		createInfo.enabledExtensionCount = enabledExtensions.size();
 		createInfo.ppEnabledExtensionNames = enabledExtensions.data();
 		auto result = createInstance(&createInfo, nullptr, &instance);
 		assert(result == Result::eSuccess);
+		void LoadReferences(VkInstance instance);
+		LoadReferences(instance);
 	}
 #pragma endregion
 #pragma region SetupDebug
@@ -117,7 +141,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		createInfo.messageSeverity = DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | DebugUtilsMessageSeverityFlagBitsEXT::eError | DebugUtilsMessageSeverityFlagBitsEXT::eWarning;
 		createInfo.messageType = DebugUtilsMessageTypeFlagBitsEXT::eGeneral | DebugUtilsMessageTypeFlagBitsEXT::eValidation | DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
 		createInfo.pfnUserCallback = DebugCallback;
-		debugger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr, DispatchLoaderDynamic(instance, vkGetInstanceProcAddr));
+		debugger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr);
 	}
 #endif
 #pragma endregion
@@ -138,7 +162,13 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		queueInfo.queueFamilyIndex = 0;
 		queueInfo.queueCount = 1;
 		queueInfo.pQueuePriorities = priorities;
-		std::vector<const char*> enabledExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+		std::vector<const char*> enabledExtensions{
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+			VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+			VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
+			VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
+			VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME
+		};
 		DeviceCreateInfo deviceInfo{};
 		deviceInfo.sType = StructureType::eDeviceCreateInfo;
 		deviceInfo.pNext = nullptr;
@@ -174,53 +204,121 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		else {
 			swapchainExtent = caps.currentExtent;
 		}
-		uint32_t presentModeCount = 0;
-		result = physicalDevice.getSurfacePresentModesKHR(surface, &presentModeCount, nullptr);
-		assert(result == Result::eSuccess);
-		assert(presentModeCount >= 1);
-		std::vector<PresentModeKHR> presentModes(presentModeCount);
-		result = physicalDevice.getSurfacePresentModesKHR(surface, &presentModeCount, presentModes.data());
-		assert(result == Result::eSuccess);
-		PresentModeKHR presentMode = (PresentModeKHR)-1;
-		for (uint32_t i = 0; i < presentModeCount; i++) {
-			if (presentModes[i] == PresentModeKHR::eImmediate) {
-				presentMode = PresentModeKHR::eImmediate;
-				break;
-			}
-		}
-		if (presentMode == (PresentModeKHR)-1) throw std::exception("no present mode support");
-		assert(caps.maxImageCount >= 1);
+		CreateDXGIFactory2(0, IID_PPV_ARGS(&pFactory));
+		VkPhysicalDeviceIDPropertiesKHR p = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES_KHR, nullptr };
+		VkPhysicalDeviceProperties2KHR p2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR, &p };
+		vkGetPhysicalDeviceProperties2KHR(physicalDevice, &p2);
+		assert(p.deviceLUIDValid);
+		auto l = reinterpret_cast<LUID*>(&p.deviceLUID);
+		IDXGIAdapter4* adp;
+		pFactory->EnumAdapterByLuid(*l, IID_PPV_ARGS(&adp));
+		D3D12CreateDevice(adp, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pD3d12Device));
+		adp->Release();
+		const auto nodeCount = pD3d12Device->GetNodeCount();
+		const UINT nodeMask = nodeCount <= 1 ? 0 : p.deviceNodeMask;
+		const D3D12_COMMAND_QUEUE_DESC desc = {
+			D3D12_COMMAND_LIST_TYPE_DIRECT,
+			D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
+			D3D12_COMMAND_QUEUE_FLAG_NONE,
+			nodeMask
+		};
+		pD3d12Device->CreateCommandQueue(&desc, IID_PPV_ARGS(&pCommandQueue));
 		uint32_t imageCount = 2;
-		SwapchainCreateInfoKHR swapchainCreateInfo = {};
-		swapchainCreateInfo.sType = StructureType::eSwapchainCreateInfoKHR;
-		swapchainCreateInfo.surface = surface;
-		swapchainCreateInfo.minImageCount = imageCount;
-		swapchainCreateInfo.imageFormat = Format::eR8G8B8A8Unorm;
-		swapchainCreateInfo.imageColorSpace = ColorSpaceKHR::eSrgbNonlinear;
-		swapchainCreateInfo.imageExtent = swapchainExtent;
-		swapchainCreateInfo.imageArrayLayers = 1;
-		swapchainCreateInfo.imageUsage = ImageUsageFlagBits::eColorAttachment;
-		swapchainCreateInfo.imageSharingMode = SharingMode::eExclusive;
-		swapchainCreateInfo.queueFamilyIndexCount = 1;
-		swapchainCreateInfo.pQueueFamilyIndices = { 0 };
-		swapchainCreateInfo.preTransform = SurfaceTransformFlagBitsKHR::eIdentity;
-		swapchainCreateInfo.compositeAlpha = CompositeAlphaFlagBitsKHR::eOpaque;
-		swapchainCreateInfo.presentMode = presentMode;
-		result = device.createSwapchainKHR(&swapchainCreateInfo, nullptr, &swapchain);
-		assert(result == Result::eSuccess);
-		result = device.getSwapchainImagesKHR(swapchain, &imageCount, nullptr);
-		assert(result == Result::eSuccess);
-		assert(imageCount > 0);
-		images.resize(imageCount);
-		result = device.getSwapchainImagesKHR(swapchain, &imageCount, images.data());
-		assert(result == Result::eSuccess);
-		views.resize(imageCount);
-		for (auto i = 0; i < imageCount; i++) {
+		const DXGI_SWAP_CHAIN_DESC1 swapchainDesc{
+			swapchainExtent.width,
+			swapchainExtent.height,
+			DXGI_FORMAT_B8G8R8A8_UNORM,
+			false,
+			{ 1, 0 },
+			DXGI_USAGE_RENDER_TARGET_OUTPUT,
+			imageCount,
+			DXGI_SCALING_NONE,
+			DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+			DXGI_ALPHA_MODE_IGNORE,
+			0
+		};
+		IDXGISwapChain1* sp1;
+		pFactory->CreateSwapChainForHwnd(pCommandQueue, hwnd, &swapchainDesc, nullptr, nullptr, &sp1);
+		sp1->QueryInterface(IID_PPV_ARGS(&pSwapchain));
+		sp1->Release();
+		pFactory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
+		backBuffers.resize(imageCount);
+		for (UINT i = 0; i < imageCount; ++i) {
+			pSwapchain->GetBuffer(i, IID_PPV_ARGS(&backBuffers[i].resource));
+			auto r = backBuffers[i].resource;
+			auto d = r->GetDesc();
+			D3D12_HEAP_PROPERTIES hp;
+			D3D12_HEAP_FLAGS hf;
+			r->GetHeapProperties(&hp, &hf);
+			VkExternalMemoryImageCreateInfoKHR ef = {
+				VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
+				nullptr,
+				VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT_KHR
+			};
+			VkImageCreateInfo cf = {
+				VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+				&ef,
+				0,
+				VK_IMAGE_TYPE_2D,
+				VK_FORMAT_B8G8R8A8_UNORM,
+				{static_cast<uint32_t>(d.Width), static_cast<uint32_t>(d.Height), 1},
+				1, 1, VK_SAMPLE_COUNT_1_BIT,
+				VK_IMAGE_TILING_OPTIMAL,
+				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+				VK_SHARING_MODE_EXCLUSIVE,
+				0, nullptr,
+				VK_IMAGE_LAYOUT_UNDEFINED
+			};
+			VkImage ni;
+			vkCreateImage(device, &cf, nullptr, &ni);
+			backBuffers[i].image = ni;
+			std::wstring name = std::wstring(L"Local\\SharedD3DResource") + std::to_wstring(i);
+			pD3d12Device->CreateSharedHandle(r, nullptr, GENERIC_ALL, name.data(), &backBuffers[i].handle);
+			VkMemoryWin32HandlePropertiesKHR w32MemProps{ VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR, nullptr, 0xcdcdcdcd };
+			assert(vkGetMemoryWin32HandlePropertiesKHR(device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT, backBuffers[i].handle, &w32MemProps) == VK_SUCCESS);
+			VkMemoryRequirements memReq;
+			vkGetImageMemoryRequirements(device, backBuffers[i].image, &memReq);
+			if (w32MemProps.memoryTypeBits == 0xcdcdcdcd) w32MemProps.memoryTypeBits = memReq.memoryTypeBits;
+			else w32MemProps.memoryTypeBits &= memReq.memoryTypeBits;
+			VkPhysicalDeviceMemoryProperties memProps;
+			vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+			int memTypeIndex = -1;
+			for (uint32_t im = 0; im < memProps.memoryTypeCount; ++im) {
+				const uint32_t current_bit = 0x1 << im;
+				if (w32MemProps.memoryTypeBits == current_bit) {
+					if (memProps.memoryTypes[im].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) memTypeIndex = im;
+					break;
+				}
+			}
+			assert(memTypeIndex >= 0);
+			const VkMemoryDedicatedAllocateInfoKHR dii = {
+				VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+				nullptr,
+				backBuffers[i].image,
+				VK_NULL_HANDLE
+			};
+			const VkImportMemoryWin32HandleInfoKHR imi{
+				VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR,
+				&dii,
+				VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT_KHR,
+				backBuffers[i].handle,
+				nullptr
+			};
+			const VkMemoryAllocateInfo mi{
+				VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+				&imi,
+				memReq.size,
+				static_cast<uint32_t>(memTypeIndex)
+			};
+			VkDeviceMemory nm{};
+			assert(vkAllocateMemory(device, &mi, nullptr, &nm) == VK_SUCCESS);
+			backBuffers[i].memory = nm;
+			assert(vkBindImageMemory(device, backBuffers[i].image, backBuffers[i].memory, 0) == VK_SUCCESS);
 			ImageViewCreateInfo createInfo{};
 			createInfo.sType = StructureType::eImageViewCreateInfo;
-			createInfo.image = images[i];
+			createInfo.image = backBuffers[i].image;
 			createInfo.viewType = ImageViewType::e2D;
-			createInfo.format = swapchainCreateInfo.imageFormat;
+			createInfo.format = Format::eB8G8R8A8Unorm;
 			createInfo.components.r = ComponentSwizzle::eIdentity;
 			createInfo.components.g = ComponentSwizzle::eIdentity;
 			createInfo.components.b = ComponentSwizzle::eIdentity;
@@ -230,7 +328,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 			createInfo.subresourceRange.levelCount = 1;
 			createInfo.subresourceRange.baseArrayLayer = 0;
 			createInfo.subresourceRange.layerCount = 1;
-			result = device.createImageView(&createInfo, nullptr, &views[i]);
+			result = device.createImageView(&createInfo, nullptr, &backBuffers[i].view);
 			assert(result == Result::eSuccess);
 		}
 	}
@@ -368,9 +466,9 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 #pragma endregion
 #pragma region CreateOthers
 	{
-		framebuffers.resize(views.size());
-		for (size_t i = 0; i < views.size(); i++) {
-			ImageView attachments[] = { views[i] };
+		framebuffers.resize(backBuffers.size());
+		for (size_t i = 0; i < backBuffers.size(); i++) {
+			ImageView attachments[] = { backBuffers[i].view };
 			FramebufferCreateInfo framebufferInfo{};
 			framebufferInfo.sType = StructureType::eFramebufferCreateInfo;
 			framebufferInfo.renderPass = renderPass;
@@ -444,7 +542,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		imageSemaphores.resize(MaxFrame);
 		renderSemaphores.resize(MaxFrame);
 		fences.resize(MaxFrame);
-		imageFences.resize(images.size(), VK_NULL_HANDLE);
+		imageFences.resize(backBuffers.size(), VK_NULL_HANDLE);
 		SemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = StructureType::eSemaphoreCreateInfo;
 		FenceCreateInfo fenceInfo{};
@@ -528,17 +626,26 @@ VulkanApp::~VulkanApp()
 		device.destroyFence(fences[i], nullptr);
 	}
 	for (auto buff : framebuffers) device.destroyFramebuffer(buff, nullptr);
-	for (auto view : views) device.destroyImageView(view, nullptr);
+	for (auto buff : backBuffers) {
+		device.destroyImageView(buff.view, nullptr);
+		device.destroyImage(buff.image, nullptr);
+		device.freeMemory(buff.memory, nullptr);
+		CloseHandle(buff.handle);
+		buff.resource->Release();
+	}
 	device.freeCommandBuffers(commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 	device.destroyPipeline(graphicsPipeline, nullptr);
 	device.destroyPipelineLayout(pipelineLayout, nullptr);
 	device.destroyRenderPass(renderPass, nullptr);
 	device.destroyCommandPool(commandPool, nullptr);
-	device.destroySwapchainKHR(swapchain, nullptr);
+	pSwapchain->Release();
+	pCommandQueue->Release();
+	pD3d12Device->Release();
+	pFactory->Release();
 	device.destroy(nullptr);
 	instance.destroySurfaceKHR(surface, nullptr);
 #ifdef _DEBUG
-	instance.destroyDebugUtilsMessengerEXT(debugger, nullptr, DispatchLoaderDynamic(instance, vkGetInstanceProcAddr));
+	instance.destroyDebugUtilsMessengerEXT(debugger, nullptr);
 #endif
 	instance.destroy();
 }

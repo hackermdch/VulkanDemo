@@ -6,12 +6,24 @@
 #include <vector>
 #include <array>
 #include <DirectXMath.h>
+#include <d3d12.h>
+#include <dxgi1_6.h>
 
-struct Vertex {
+struct Vertex
+{
 	DirectX::XMFLOAT3 pos;
 	DirectX::XMFLOAT4 color;
 	static vk::VertexInputBindingDescription GetBindingDescription();
 	static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions();
+};
+
+struct BackBuffer
+{
+	HANDLE handle;
+	ID3D12Resource* resource;
+	vk::Image image;
+	vk::ImageView view;
+	vk::DeviceMemory memory;
 };
 
 class VulkanApp
@@ -21,21 +33,23 @@ class VulkanApp
 #endif
 private:
 	constexpr static uint32_t MaxFrame = 2;
+	IDXGIFactory7* pFactory;
+	ID3D12Device* pD3d12Device;
+	ID3D12CommandQueue* pCommandQueue;
+	IDXGISwapChain4* pSwapchain;
 	const HWND hwnd;
 	vk::Instance instance;
 	vk::PhysicalDevice physicalDevice;
 	vk::Device device;
 	vk::Queue queue;
 	vk::SurfaceKHR surface;
-	vk::SwapchainKHR swapchain;
 	vk::RenderPass renderPass;
 	vk::PipelineLayout pipelineLayout;
 	vk::Pipeline graphicsPipeline;
 	vk::CommandPool commandPool;
 	vk::Buffer vertexBuffer;
 	vk::DeviceMemory vertexBufferMemory;
-	std::vector<vk::Image> images;
-	std::vector<vk::ImageView> views;
+	std::vector<BackBuffer> backBuffers;
 	std::vector<vk::Framebuffer> framebuffers;
 	std::vector<vk::CommandBuffer> commandBuffers;
 	std::vector<vk::Semaphore> imageSemaphores;
