@@ -1,5 +1,9 @@
 #include "VulkanApp.h"
+#ifdef _DEBUG
 #include <cassert>
+#else
+#define assert(X) (void)(X);
+#endif
 #include <fstream>
 
 using namespace vk;
@@ -108,22 +112,15 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		createInfo.sType = StructureType::eInstanceCreateInfo;
 		createInfo.pNext = nullptr;
 		createInfo.pApplicationInfo = &appInfo;
-#ifdef NDEBUG
 		std::vector<const char*> enabledExtensions{
-			VK_KHR_SURFACE_EXTENSION_NAME,
-			VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-			VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-			VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,VK_EXT_DEBUG_UTILS_EXTENSION_NAME
-		};
-#else
-		std::vector<const char*> enabledExtensions{
+#ifdef _DEBUG
 			VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+#endif
 			VK_KHR_SURFACE_EXTENSION_NAME,
 			VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 			VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-			VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME
+			VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
 		};
-#endif
 		createInfo.enabledExtensionCount = enabledExtensions.size();
 		createInfo.ppEnabledExtensionNames = enabledExtensions.data();
 		auto result = createInstance(&createInfo, nullptr, &instance);
@@ -147,12 +144,10 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 #pragma region CreateDevice
 	{
 		uint32_t deviceCount = 0;
-		auto result = instance.enumeratePhysicalDevices(&deviceCount, nullptr);
-		assert(result == Result::eSuccess);
+		assert(instance.enumeratePhysicalDevices(&deviceCount, nullptr) == Result::eSuccess);
 		assert(deviceCount >= 1);
 		std::vector<PhysicalDevice> physicalDevices(deviceCount);
-		result = instance.enumeratePhysicalDevices(&deviceCount, physicalDevices.data());
-		assert(result == Result::eSuccess);
+		assert(instance.enumeratePhysicalDevices(&deviceCount, physicalDevices.data()) == Result::eSuccess);
 		physicalDevice = physicalDevices[0];
 		float priorities[] = { 1.0f };
 		DeviceQueueCreateInfo queueInfo{};
@@ -166,7 +161,8 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 			VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
 			VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
 			VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
-			VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME
+			VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
+			VK_KHR_BIND_MEMORY_2_EXTENSION_NAME
 		};
 		DeviceCreateInfo deviceInfo{};
 		deviceInfo.sType = StructureType::eDeviceCreateInfo;
@@ -176,8 +172,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		deviceInfo.enabledExtensionCount = enabledExtensions.size();
 		deviceInfo.ppEnabledExtensionNames = enabledExtensions.data();
 		deviceInfo.pEnabledFeatures = nullptr;
-		result = physicalDevice.createDevice(&deviceInfo, nullptr, &device);
-		assert(result == Result::eSuccess);
+		assert(physicalDevice.createDevice(&deviceInfo, nullptr, &device) == Result::eSuccess);
 		device.getQueue(0, 0, &queue);
 	}
 #pragma endregion
@@ -210,7 +205,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		p2.sType = StructureType::ePhysicalDeviceProperties2KHR;
 		p2.pNext = &p;
 		physicalDevice.getProperties2KHR(&p2);
-		assert(p.deviceLUIDValid);
+		if (p.deviceLUIDValid == false) throw std::exception("unknow exception");
 		{
 			auto l = reinterpret_cast<LUID*>(&p.deviceLUID);
 			IDXGIAdapter4* adp;
@@ -289,7 +284,12 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 			memoryAllocateInfo.allocationSize = memReq.size;
 			memoryAllocateInfo.memoryTypeIndex = memTypeIndex;
 			assert(device.allocateMemory(&memoryAllocateInfo, nullptr, &backBuffers[i].memory) == Result::eSuccess);
-			device.bindImageMemory(backBuffers[i].image, backBuffers[i].memory, 0);
+			BindImageMemoryInfoKHR bind{};
+			bind.sType = StructureType::eBindImageMemoryInfoKHR;
+			bind.image = backBuffers[i].image;
+			bind.memory = backBuffers[i].memory;
+			bind.memoryOffset = 0;
+			if (device.bindImageMemory2KHR(1, &bind) != Result::eSuccess) throw std::exception("unknow exception");
 			ImageViewCreateInfo createInfo{};
 			createInfo.sType = StructureType::eImageViewCreateInfo;
 			createInfo.image = backBuffers[i].image;
