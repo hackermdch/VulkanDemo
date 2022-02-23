@@ -41,7 +41,6 @@ uint32_t VulkanApp::FindMemoryType(uint32_t typeFilter, MemoryPropertyFlags prop
 void VulkanApp::DrawFrame()
 {
 	device.waitForFences(1, &fences[currentFrame], VK_TRUE, UINT64_MAX);
-	VkSubmitInfo submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO,nullptr, 0, nullptr, nullptr, 0, nullptr,  1, };
 	SubmitInfo s{};
 	s.sType = StructureType::eSubmitInfo;
 	s.signalSemaphoreCount = 1;
@@ -205,38 +204,36 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 			swapchainExtent = caps.currentExtent;
 		}
 		CreateDXGIFactory2(0, IID_PPV_ARGS(&pFactory));
-		VkPhysicalDeviceIDPropertiesKHR p = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES_KHR, nullptr };
-		VkPhysicalDeviceProperties2KHR p2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR, &p };
-		vkGetPhysicalDeviceProperties2KHR(physicalDevice, &p2);
+		PhysicalDeviceIDPropertiesKHR p{};
+		p.sType = StructureType::ePhysicalDeviceIdPropertiesKHR;
+		PhysicalDeviceProperties2KHR p2{};
+		p2.sType = StructureType::ePhysicalDeviceProperties2KHR;
+		p2.pNext = &p;
+		physicalDevice.getProperties2KHR(&p2);
 		assert(p.deviceLUIDValid);
-		auto l = reinterpret_cast<LUID*>(&p.deviceLUID);
-		IDXGIAdapter4* adp;
-		pFactory->EnumAdapterByLuid(*l, IID_PPV_ARGS(&adp));
-		D3D12CreateDevice(adp, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pD3d12Device));
-		adp->Release();
+		{
+			auto l = reinterpret_cast<LUID*>(&p.deviceLUID);
+			IDXGIAdapter4* adp;
+			pFactory->EnumAdapterByLuid(*l, IID_PPV_ARGS(&adp));
+			D3D12CreateDevice(adp, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pD3d12Device));
+			adp->Release();
+		}
 		const auto nodeCount = pD3d12Device->GetNodeCount();
 		const UINT nodeMask = nodeCount <= 1 ? 0 : p.deviceNodeMask;
-		const D3D12_COMMAND_QUEUE_DESC desc = {
-			D3D12_COMMAND_LIST_TYPE_DIRECT,
-			D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
-			D3D12_COMMAND_QUEUE_FLAG_NONE,
-			nodeMask
-		};
+		const D3D12_COMMAND_QUEUE_DESC desc{ D3D12_COMMAND_LIST_TYPE_DIRECT,D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,D3D12_COMMAND_QUEUE_FLAG_NONE,nodeMask };
 		pD3d12Device->CreateCommandQueue(&desc, IID_PPV_ARGS(&pCommandQueue));
 		uint32_t imageCount = 2;
-		const DXGI_SWAP_CHAIN_DESC1 swapchainDesc{
-			swapchainExtent.width,
-			swapchainExtent.height,
-			DXGI_FORMAT_B8G8R8A8_UNORM,
-			false,
-			{ 1, 0 },
-			DXGI_USAGE_RENDER_TARGET_OUTPUT,
-			imageCount,
-			DXGI_SCALING_NONE,
-			DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-			DXGI_ALPHA_MODE_IGNORE,
-			0
-		};
+		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{};
+		swapchainDesc.Width = swapchainExtent.width;
+		swapchainDesc.Height = swapchainExtent.height;
+		swapchainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		swapchainDesc.SampleDesc.Count = 1;
+		swapchainDesc.SampleDesc.Quality = 0;
+		swapchainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		swapchainDesc.BufferCount = imageCount;
+		swapchainDesc.Scaling = DXGI_SCALING_NONE;
+		swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 		IDXGISwapChain1* sp1;
 		pFactory->CreateSwapChainForHwnd(pCommandQueue, hwnd, &swapchainDesc, nullptr, nullptr, &sp1);
 		sp1->QueryInterface(IID_PPV_ARGS(&pSwapchain));
@@ -250,70 +247,49 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 			D3D12_HEAP_PROPERTIES hp;
 			D3D12_HEAP_FLAGS hf;
 			r->GetHeapProperties(&hp, &hf);
-			VkExternalMemoryImageCreateInfoKHR ef = {
-				VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
-				nullptr,
-				VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT_KHR
-			};
-			VkImageCreateInfo cf = {
-				VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-				&ef,
-				0,
-				VK_IMAGE_TYPE_2D,
-				VK_FORMAT_B8G8R8A8_UNORM,
-				{static_cast<uint32_t>(d.Width), static_cast<uint32_t>(d.Height), 1},
-				1, 1, VK_SAMPLE_COUNT_1_BIT,
-				VK_IMAGE_TILING_OPTIMAL,
-				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-				VK_SHARING_MODE_EXCLUSIVE,
-				0, nullptr,
-				VK_IMAGE_LAYOUT_UNDEFINED
-			};
-			VkImage ni;
-			vkCreateImage(device, &cf, nullptr, &ni);
-			backBuffers[i].image = ni;
-			std::wstring name = std::wstring(L"Local\\SharedD3DResource") + std::to_wstring(i);
-			pD3d12Device->CreateSharedHandle(r, nullptr, GENERIC_ALL, name.data(), &backBuffers[i].handle);
-			VkMemoryWin32HandlePropertiesKHR w32MemProps{ VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR, nullptr, 0xcdcdcdcd };
-			assert(vkGetMemoryWin32HandlePropertiesKHR(device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT, backBuffers[i].handle, &w32MemProps) == VK_SUCCESS);
-			VkMemoryRequirements memReq;
-			vkGetImageMemoryRequirements(device, backBuffers[i].image, &memReq);
+			ExternalMemoryImageCreateInfoKHR ef{};
+			ef.sType = StructureType::eExternalMemoryImageCreateInfoKHR;
+			ef.handleTypes = ExternalMemoryHandleTypeFlagBits::eD3D12Resource;
+			ImageCreateInfo imageci{};
+			imageci.sType = StructureType::eImageCreateInfo;
+			imageci.imageType = ImageType::e2D;
+			imageci.format = Format::eB8G8R8A8Unorm;
+			imageci.extent.width = d.Width;
+			imageci.extent.height = d.Height;
+			imageci.extent.depth = 1;
+			imageci.mipLevels = 1;
+			imageci.arrayLayers = 1;
+			imageci.samples = SampleCountFlagBits::e1;
+			imageci.tiling = ImageTiling::eOptimal;
+			imageci.usage = ImageUsageFlagBits::eColorAttachment;
+			imageci.sharingMode = SharingMode::eExclusive;
+			imageci.initialLayout = ImageLayout::eUndefined;
+			device.createImage(&imageci, nullptr, &backBuffers[i].image);
+			pD3d12Device->CreateSharedHandle(r, nullptr, GENERIC_ALL, nullptr, &backBuffers[i].handle);
+			MemoryWin32HandlePropertiesKHR w32MemProps{};
+			w32MemProps.sType = StructureType::eMemoryWin32HandlePropertiesKHR;
+			w32MemProps.memoryTypeBits = 0xcdcdcdcd;
+			assert(device.getMemoryWin32HandlePropertiesKHR(ExternalMemoryHandleTypeFlagBits::eD3D12Resource, backBuffers[i].handle, &w32MemProps) == Result::eSuccess);
+			MemoryRequirements memReq;
+			device.getImageMemoryRequirements(backBuffers[i].image, &memReq);
 			if (w32MemProps.memoryTypeBits == 0xcdcdcdcd) w32MemProps.memoryTypeBits = memReq.memoryTypeBits;
 			else w32MemProps.memoryTypeBits &= memReq.memoryTypeBits;
-			VkPhysicalDeviceMemoryProperties memProps;
-			vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
-			int memTypeIndex = -1;
-			for (uint32_t im = 0; im < memProps.memoryTypeCount; ++im) {
-				const uint32_t current_bit = 0x1 << im;
-				if (w32MemProps.memoryTypeBits == current_bit) {
-					if (memProps.memoryTypes[im].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) memTypeIndex = im;
-					break;
-				}
-			}
-			assert(memTypeIndex >= 0);
-			const VkMemoryDedicatedAllocateInfoKHR dii = {
-				VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-				nullptr,
-				backBuffers[i].image,
-				VK_NULL_HANDLE
-			};
-			const VkImportMemoryWin32HandleInfoKHR imi{
-				VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR,
-				&dii,
-				VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT_KHR,
-				backBuffers[i].handle,
-				nullptr
-			};
-			const VkMemoryAllocateInfo mi{
-				VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-				&imi,
-				memReq.size,
-				static_cast<uint32_t>(memTypeIndex)
-			};
-			VkDeviceMemory nm{};
-			assert(vkAllocateMemory(device, &mi, nullptr, &nm) == VK_SUCCESS);
-			backBuffers[i].memory = nm;
-			assert(vkBindImageMemory(device, backBuffers[i].image, backBuffers[i].memory, 0) == VK_SUCCESS);
+			auto memTypeIndex = FindMemoryType(w32MemProps.memoryTypeBits, MemoryPropertyFlagBits::eDeviceLocal);
+			MemoryDedicatedAllocateInfoKHR dedicatedAllocateInfo{};
+			dedicatedAllocateInfo.sType = StructureType::eMemoryDedicatedAllocateInfoKHR;
+			dedicatedAllocateInfo.image = backBuffers[i].image;
+			ImportMemoryWin32HandleInfoKHR importMemoryInfo{};
+			importMemoryInfo.sType = StructureType::eImportMemoryWin32HandleInfoKHR;
+			importMemoryInfo.pNext = &dedicatedAllocateInfo;
+			importMemoryInfo.handleType = ExternalMemoryHandleTypeFlagBits::eD3D12Resource;
+			importMemoryInfo.handle = backBuffers[i].handle;
+			MemoryAllocateInfo memoryAllocateInfo{};
+			memoryAllocateInfo.sType = StructureType::eMemoryAllocateInfo;
+			memoryAllocateInfo.pNext = &importMemoryInfo;
+			memoryAllocateInfo.allocationSize = memReq.size;
+			memoryAllocateInfo.memoryTypeIndex = memTypeIndex;
+			assert(device.allocateMemory(&memoryAllocateInfo, nullptr, &backBuffers[i].memory) == Result::eSuccess);
+			device.bindImageMemory(backBuffers[i].image, backBuffers[i].memory, 0);
 			ImageViewCreateInfo createInfo{};
 			createInfo.sType = StructureType::eImageViewCreateInfo;
 			createInfo.image = backBuffers[i].image;
