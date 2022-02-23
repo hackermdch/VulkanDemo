@@ -1,5 +1,10 @@
 #include "VulkanApp.h"
+#ifdef _DEBUG
 #include <cassert>
+#else
+#define assert(X) (void)(X)
+#endif
+
 #include <fstream>
 
 using namespace vk;
@@ -98,11 +103,13 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		createInfo.sType = StructureType::eInstanceCreateInfo;
 		createInfo.pNext = nullptr;
 		createInfo.pApplicationInfo = &appInfo;
-#ifdef NDEBUG
-		std::vector<const char*> enabledExtensions{ VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME };
-#else
-		std::vector<const char*> enabledExtensions{ VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_EXTENSION_NAME };
+		std::vector<const char*> enabledExtensions{
+#ifdef _DEBUG
+			VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
+			VK_KHR_SURFACE_EXTENSION_NAME,
+			VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+		};
 		createInfo.enabledExtensionCount = enabledExtensions.size();
 		createInfo.ppEnabledExtensionNames = enabledExtensions.data();
 		auto result = createInstance(&createInfo, nullptr, &instance);
@@ -459,7 +466,7 @@ VulkanApp::VulkanApp() : hwnd(CreateWindowEx(0, WndClsName, L"vulkan", WS_OVERLA
 		}
 	}
 #pragma endregion
-}
+	}
 
 VertexInputBindingDescription Vertex::GetBindingDescription()
 {
