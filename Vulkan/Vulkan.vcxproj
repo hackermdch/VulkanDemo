@@ -166,7 +166,7 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.4</ShaderModel>
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc -spirv -E "main" -Od -T "ps_6_4" -nologo -Qembed_debug -Fo "$(OutDir)ps.spv" %(Filename).hlsl -Zi</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(VK_SDK_PATH)\bin\dxc.exe -spirv -E "main" -Od -T "ps_6_4" -nologo -Qembed_debug -Fo "$(OutDir)ps.spv" %(Filename).hlsl -Zi</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">HLSL to SPIR-V</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)%(Filename).spv</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
@@ -183,7 +183,7 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.4</ShaderModel>
       <AssemblerOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)%(Filename).asm</AssemblerOutputFile>
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc -spirv -E "main" -Od -T "vs_6_4" -nologo -Qembed_debug -Fo "$(OutDir)vs.spv" %(Filename).hlsl -Zi</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(VK_SDK_PATH)\bin\dxc.exe -spirv -E "main" -Od -T "vs_6_4" -nologo -Qembed_debug -Fo "$(OutDir)vs.spv" %(Filename).hlsl -Zi</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">HLSL to SPIR-V</Message>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)%(Filename).spv</Outputs>
