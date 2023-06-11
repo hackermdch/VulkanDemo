@@ -1,0 +1,4 @@
+vkGetMemoryWin32HandlePropertiesKHR
+vkBindImageMemory2KHR
+vkDestroyDebugUtilsMessengerEXT
+vkCreateDebugUtilsMessengerEXT

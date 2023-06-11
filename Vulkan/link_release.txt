@@ -1,0 +1,2 @@
+vkGetMemoryWin32HandlePropertiesKHR
+vkBindImageMemory2KHR
